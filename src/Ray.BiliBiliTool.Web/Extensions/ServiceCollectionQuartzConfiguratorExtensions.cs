@@ -21,12 +21,9 @@ public static class ServiceCollectionQuartzConfiguratorExtensions
         {
             q.UsePersistentStore(storeOptions =>
             {
-                storeOptions.UseMicrosoftSQLite(sqlLiteOptions =>
-                {
-                    sqlLiteOptions.UseDriverDelegate<SQLiteDelegate>();
-                    sqlLiteOptions.ConnectionString = sqliteConnStr;
-                    sqlLiteOptions.TablePrefix = "QRTZ_";
-                });
+                storeOptions.UseSqlite(sqliteConnStr);
+                storeOptions.UseDriverDelegate<SQLiteDelegate>();
+                storeOptions.ConfigureStore(store => store.TablePrefix = "QRTZ_");
                 storeOptions.UseSystemTextJsonSerializer();
             });
 
@@ -37,8 +34,8 @@ public static class ServiceCollectionQuartzConfiguratorExtensions
         return services;
     }
 
-    public static IServiceCollectionQuartzConfigurator AddBiliJobs(
-        this IServiceCollectionQuartzConfigurator quartz,
+    public static IQuartzBuilder AddBiliJobs(
+        this IQuartzBuilder quartz,
         IConfiguration configuration
     )
     {
@@ -110,6 +107,23 @@ public static class ServiceCollectionQuartzConfiguratorExtensions
             configuration
         );
 
+        // 自动补做 job：固定间隔触发（不是 Cron），用于补跑今天漏做的任务
+        var autoRecoverInterval = Math.Clamp(
+            configuration.GetValue("AutoRecoverConfig:IntervalHours", 2),
+            1,
+            24
+        );
+
+        quartz.AddJob<AutoRecoverJob>(opts => opts.WithIdentity(AutoRecoverJob.Key));
+        quartz.AddTrigger(opts =>
+            opts.ForJob(AutoRecoverJob.Key)
+                .WithIdentity(AutoRecoverJob.TriggerKeyValue)
+                .StartAt(DateTimeOffset.UtcNow.AddMinutes(1))
+                .WithSimpleSchedule(x =>
+                    x.WithInterval(TimeSpan.FromHours(autoRecoverInterval)).RepeatForever()
+                )
+        );
+
         // Test bili job
         AddBiliJob<TestBiliJob>(quartz, TestBiliJob.Key, null, configuration);
 
@@ -117,7 +131,7 @@ public static class ServiceCollectionQuartzConfiguratorExtensions
     }
 
     private static void AddBiliJob<TJob>(
-        IServiceCollectionQuartzConfigurator quartz,
+        IQuartzBuilder quartz,
         JobKey key,
         string? configCronKey,
         IConfiguration configuration

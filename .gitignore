@@ -3,6 +3,8 @@
 ##
 ## Get latest from https://github.com/github/gitignore/blob/master/VisualStudio.gitignore
 
+.DS_Store
+
 # User-specific files
 *.rsuser
 *.suo
@@ -354,18 +356,18 @@ MigrationBackup/
 
 #
 .idea/
-tencentScf/.env
+platforms/tencentScf/.env
 .obsidian
 
 # vs code
 .vscode
 
 # krew
-krew/bilipro
-krew/cmd/kubectl-bilipro
-krew/kustomization.yaml
 bilipro
-krew/pkg/utils/fixtures
+platforms/krew/bilipro
+platforms/krew/cmd/kubectl-bilipro
+platforms/krew/kustomization.yaml
+platforms/krew/pkg/utils/fixtures
 kustomization.yaml
 
 # cookie config
@@ -380,3 +382,6 @@ bruno/.env
 
 # db
 src/**/BiliBiliTool.db*
+
+# agent
+.workbuddy

@@ -1,29 +1,124 @@
 ﻿@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.JSInterop
+@inject IJSRuntime JSRuntime
+@inject NavigationManager Navigation
+@inject IBrowserViewportService BrowserViewportService
+@implements IDisposable
 @inherits LayoutComponentBase
 
-<div class="page">
-    <div class="sidebar">
-        <NavMenu/>
-    </div>
+<MudLayout Class="app-shell">
+    <MudAppBar Elevation="0" Fixed="true" Class="app-topbar">
+        @* Rendered below Md only: at Md and up the drawer is persistent and needs no toggle. *@
+        <MudIconButton Icon="@Icons.Material.Filled.Menu"
+                       Class="d-flex d-md-none"
+                       OnClick="ToggleDrawer" Color="Color.Inherit"
+                       HtmlAttributes="@(new Dictionary<string, object> { { "title", "菜单" }, { "aria-label", "打开或关闭菜单" } })"/>
+        <MudText Typo="Typo.h6" Class="app-brand ml-3">BiliTool<span class="app-brand-dot">.</span></MudText>
+        <MudSpacer/>
+        <MudIconButton Icon="@Icons.Material.Filled.Brightness4"
+                       OnClick="ToggleDarkMode" Color="Color.Inherit"
+                       HtmlAttributes="@(new Dictionary<string, object> { { "title", "切换暗色模式" }, { "aria-label", "切换暗色模式" } })"/>
+        <MudButton Href="about" Color="Color.Inherit">关于项目</MudButton>
+        <AuthorizeView>
+            <Authorized>
+                <MudButton Href="/auth/logout" Color="Color.Inherit">退出登录</MudButton>
+            </Authorized>
+        </AuthorizeView>
+    </MudAppBar>
 
-    <main>
-        <div class="top-row px-4">
-            <a href="https://github.com/RayWangQvQ/BiliBiliToolPro" target="_blank">About</a>
-            <AuthorizeView>
-                <Authorized>
-                    <a href="/auth/logout" class="nav-link">Log out</a>
-                </Authorized>
-            </AuthorizeView>
+    @* Responsive drawer: persistent (pushes content) at Md and up, overlay below Md.
+       ClipMode.Always keeps the app bar full width and puts the drawer underneath it.
+       Width needs a CSS unit - MudBlazor writes it verbatim into --mud-drawer-width-left. *@
+    <MudDrawer @bind-Open="_drawerOpen"
+               Variant="DrawerVariant.Responsive"
+               Breakpoint="Breakpoint.Md"
+               ClipMode="DrawerClipMode.Always"
+               Anchor="Anchor.Start" Elevation="0" Width="250px" Class="app-sidebar">
+        @* Body is an explicit flex column: the nav list takes the free space and scrolls,
+           the version footer keeps its own height at the bottom. *@
+        <div class="app-drawer-body">
+            <MudNavMenu Class="app-drawer-nav">
+                <NavMenu/>
+            </MudNavMenu>
+            <AppVersionFooter/>
         </div>
+    </MudDrawer>
 
-        <article class="content px-4">
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.Large" Class="app-content">
             @Body
-        </article>
-    </main>
-</div>
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
 
-<div id="blazor-error-ui">
-    An unhandled error has occurred.
-    <a href="" class="reload">Reload</a>
-    <a class="dismiss">🗙</a>
-</div>
+<MudThemeProvider Theme="_theme" IsDarkMode="_isDarkMode"/>
+<MudPopoverProvider/>
+<MudDialogProvider/>
+<MudSnackbarProvider/>
+
+@code {
+    private bool _isDarkMode;
+    private bool _drawerOpen = true;
+    private readonly MudTheme _theme = AppTheme.Create();
+
+    protected override void OnInitialized()
+    {
+        Navigation.LocationChanged += OnLocationChanged;
+    }
+
+    public void Dispose()
+    {
+        Navigation.LocationChanged -= OnLocationChanged;
+    }
+
+    private void ToggleDrawer()
+    {
+        _drawerOpen = !_drawerOpen;
+    }
+
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs e)
+    {
+        // Navigating must not leave the overlay drawer covering the new page.
+        _ = CloseDrawerOnNavigationAsync();
+    }
+
+    private async Task CloseDrawerOnNavigationAsync()
+    {
+        if (!_drawerOpen)
+        {
+            return;
+        }
+
+        // Xs/Sm are the breakpoints below Md, where the drawer is an overlay instead of persistent.
+        var breakpoint = await BrowserViewportService.GetCurrentBreakpointAsync();
+        if (breakpoint is not (Breakpoint.Xs or Breakpoint.Sm))
+        {
+            return;
+        }
+
+        _drawerOpen = false;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        var dark = await AppTheme.IsDarkModePreferredAsync(JSRuntime);
+        if (dark != _isDarkMode)
+        {
+            _isDarkMode = dark;
+            StateHasChanged();
+        }
+    }
+
+    private void ToggleDarkMode()
+    {
+        _isDarkMode = !_isDarkMode;
+        JSRuntime.InvokeVoidAsync("localStorage.setItem", "bilitool-dark", _isDarkMode ? "1" : "0");
+    }
+}

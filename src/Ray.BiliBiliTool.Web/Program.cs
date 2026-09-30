@@ -8,6 +8,7 @@ using Ray.BiliBiliTool.Infrastructure.EF;
 using Ray.BiliBiliTool.Infrastructure.EF.Extensions;
 using Ray.BiliBiliTool.Web.Components;
 using Ray.BiliBiliTool.Web.Extensions;
+using Ray.BiliBiliTool.Web.Services.Pages.BiliAccount;
 using Serilog;
 using Serilog.Debugging;
 
@@ -18,10 +19,6 @@ try
 {
     var builder = WebApplication.CreateBuilder(args);
 
-    // cookies.json as fallback source — loaded before SQLite so that
-    // SQLite keys take precedence when both exist.
-    builder.Configuration.AddJsonFile("config/cookies.json", optional: true, reloadOnChange: true);
-
     var sqliteConnStr = builder.Configuration.GetConnectionString("Sqlite");
     if (!string.IsNullOrEmpty(sqliteConnStr))
     {
@@ -31,6 +28,7 @@ try
             keyColumnName: "Key",
             valueColumnName: "Value"
         );
+        BiliAccountPageWorkflow.CompactStoredAccounts(builder.Configuration);
     }
 
     builder
@@ -106,6 +104,7 @@ try
     app.UseHttpsRedirection();
 
     app.UseStaticFiles();
+    app.MapStaticAssets();
     app.UseAntiforgery();
 
     app.UseSerilogRequestLogging();
@@ -127,7 +126,13 @@ try
 }
 catch (Exception ex)
 {
+    // 记完日志后必须重新抛出，让进程以非 0 退出码结束。
+    // 否则顶层语句正常返回、退出码为 0，Docker / 青龙 / SCF 等编排层会把
+    // 「启动崩溃」当成「正常退出」：不重启、不告警，只是端口从未监听。
+    // 退出码由运行时按未处理异常决定（Linux 134，Windows 0xE0434352），
+    // 详见 docs/adr/0001-web-startup-failure-must-exit-nonzero.md。
     Log.Fatal(ex, "Application terminated unexpectedly");
+    throw;
 }
 finally
 {

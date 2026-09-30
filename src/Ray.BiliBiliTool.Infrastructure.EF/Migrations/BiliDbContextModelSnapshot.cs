@@ -15,7 +15,7 @@ namespace Ray.BiliBiliTool.Web.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "8.0.3");
+            modelBuilder.HasAnnotation("ProductVersion", "10.0.12");
 
             modelBuilder.Entity("AppAny.Quartz.EntityFrameworkCore.Migrations.QuartzBlobTrigger", b =>
                 {
@@ -97,6 +97,10 @@ namespace Ray.BiliBiliTool.Web.Migrations
                     b.Property<string>("EntryId")
                         .HasColumnType("text")
                         .HasColumnName("ENTRY_ID");
+
+                    b.Property<string>("ExecutionGroup")
+                        .HasColumnType("text")
+                        .HasColumnName("EXECUTION_GROUP");
 
                     b.Property<long>("FiredTime")
                         .HasColumnType("bigint")
@@ -236,6 +240,21 @@ namespace Ray.BiliBiliTool.Web.Migrations
                     b.HasKey("SchedulerName", "LockName");
 
                     b.ToTable("QRTZ_LOCKS", (string)null);
+                });
+
+            modelBuilder.Entity("AppAny.Quartz.EntityFrameworkCore.Migrations.QuartzPausedJobGroup", b =>
+                {
+                    b.Property<string>("SchedulerName")
+                        .HasColumnType("text")
+                        .HasColumnName("SCHED_NAME");
+
+                    b.Property<string>("JobGroup")
+                        .HasColumnType("text")
+                        .HasColumnName("JOB_GROUP");
+
+                    b.HasKey("SchedulerName", "JobGroup");
+
+                    b.ToTable("QRTZ_PAUSED_JOB_GRPS", (string)null);
                 });
 
             modelBuilder.Entity("AppAny.Quartz.EntityFrameworkCore.Migrations.QuartzPausedTriggerGroup", b =>
@@ -400,6 +419,10 @@ namespace Ray.BiliBiliTool.Web.Migrations
                         .HasColumnType("bigint")
                         .HasColumnName("END_TIME");
 
+                    b.Property<string>("ExecutionGroup")
+                        .HasColumnType("text")
+                        .HasColumnName("EXECUTION_GROUP");
+
                     b.Property<byte[]>("JobData")
                         .HasColumnType("bytea")
                         .HasColumnName("JOB_DATA");
@@ -418,9 +441,23 @@ namespace Ray.BiliBiliTool.Web.Migrations
                         .HasColumnType("smallint")
                         .HasColumnName("MISFIRE_INSTR");
 
+                    b.Property<long?>("MisfireOriginalFireTime")
+                        .HasColumnType("bigint")
+                        .HasColumnName("MISFIRE_ORIG_FIRE_TIME");
+
                     b.Property<long?>("NextFireTime")
                         .HasColumnType("bigint")
                         .HasColumnName("NEXT_FIRE_TIME");
+
+                    b.Property<string>("PreferredNode")
+                        .HasColumnType("text")
+                        .HasColumnName("PREFERRED_NODE");
+
+                    b.Property<bool>("PreferredNodeAuto")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(false)
+                        .HasColumnName("PREFERRED_NODE_AUTO");
 
                     b.Property<long?>("PreviousFireTime")
                         .HasColumnType("bigint")
@@ -429,6 +466,14 @@ namespace Ray.BiliBiliTool.Web.Migrations
                     b.Property<int?>("Priority")
                         .HasColumnType("integer")
                         .HasColumnName("PRIORITY");
+
+                    b.Property<int?>("RetryAttempt")
+                        .HasColumnType("integer")
+                        .HasColumnName("RETRY_ATTEMPT");
+
+                    b.Property<string>("RetryPolicy")
+                        .HasColumnType("text")
+                        .HasColumnName("RETRY_POLICY");
 
                     b.Property<long>("StartTime")
                         .HasColumnType("bigint")
@@ -580,12 +625,56 @@ namespace Ray.BiliBiliTool.Web.Migrations
                     b.ToTable("bili_execution_logs");
                 });
 
+            modelBuilder.Entity("Ray.BiliBiliTool.Domain.TaskRecord", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("CreatedAtUtc")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Message")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("RecordDate")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TaskItemKey")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("TaskKey")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Trigger")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("UserId")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "TaskKey", "RecordDate");
+
+                    b.ToTable("bili_task_records");
+                });
+
             modelBuilder.Entity("Ray.BiliBiliTool.Domain.User", b =>
                 {
                     b.Property<long>("Id")
                         .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER")
-                        .HasColumnName("id");
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("PasswordHash")
                         .IsRequired()

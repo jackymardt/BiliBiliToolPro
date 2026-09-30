@@ -10,7 +10,10 @@ public abstract class BaseJob<TJob>(ILogger<TJob> logger) : IJob
 {
     protected ILogger<TJob> Logger { get; } = logger;
 
-    public async Task Execute(IJobExecutionContext context)
+    public async ValueTask Execute(
+        IJobExecutionContext context,
+        CancellationToken cancellationToken
+    )
     {
         var fireInstanceId = context.FireInstanceId;
 
@@ -35,8 +38,8 @@ public abstract class BaseJob<TJob>(ILogger<TJob> logger) : IJob
             {
                 logger.LogInformation("---");
                 logger.LogInformation(
-                    "v{version} 开源 by {url}",
-                    typeof(Program).Assembly.GetName().Version?.ToString(),
+                    "{version} 开源 by {url}",
+                    Config.AppVersion.DisplayOf(typeof(Program).Assembly),
                     Config.Constants.SourceCodeUrl + Environment.NewLine
                 );
             }

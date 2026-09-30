@@ -1,0 +1,188 @@
+name: Publish stable release
+
+# 新发布策略（ADR-0002）的稳定版通道：维护者在 Actions 页面手动 Run workflow，
+# 下拉选择升级级别，之后全自动：算号 → zip → Release → 镜像 → CHANGELOG 回写。
+on:
+  workflow_dispatch:
+    inputs:
+      level:
+        description: "升级级别（基于最新稳定 tag 计算下一版本）"
+        type: choice
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+
+permissions:
+  contents: write # 建 tag、GitHub Release、CHANGELOG 回写
+  packages: write # 推 GHCR
+  discussions: write # 发版时自动开 Discussion
+
+# 一次发版全流程串行，避免并发算出同一个版本号
+concurrency:
+  group: stable-release
+  cancel-in-progress: false
+
+env:
+  DOCKER_IMG_NAME: zai7lou/bili_tool_web
+  GHCR_IMG_NAME: ghcr.io/raywangqvq/bili_tool_web
+
+jobs:
+  determine-version:
+    name: Determine stable version
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      since: ${{ steps.version.outputs.since }}
+    steps:
+      # fetch-depth: 0：版本号与 notes 都依赖完整 tag 历史
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - id: version
+        env:
+          LEVEL: ${{ inputs.level }}
+        run: |
+          since=$(bash ./scripts/version-next.sh latest)
+          version=$(bash ./scripts/version-next.sh stable "$LEVEL")
+          # 防御：正常流程下算出的版本不可能已有 tag（那它自己就是 latest），
+          # 存在即说明历史被手工动过，宁可失败也不发错版本。
+          if git rev-parse -q --verify "refs/tags/$version" >/dev/null; then
+            echo "::error::tag $version 已存在，git 历史异常，拒绝发版"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "since=$since" >> "$GITHUB_OUTPUT"
+          echo "发版：${since:-仓库起点} -> $version（$LEVEL）"
+
+  publish-release:
+    name: Build artifacts and create release
+    needs: determine-version
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: "10.0.x"
+
+      # 版本号显式传入，构建时烘焙进程序集 informational version
+      - name: Publish all runtimes
+        env:
+          RELEASE_VERSION: ${{ needs.determine-version.outputs.version }}
+        run: bash ./scripts/publish.sh --runtime all
+
+      # notes 取自上个稳定 tag 以来合并的 PR 标题（不合规标题原样收录）。
+      # 若期间没有任何合并，脚本会报错让发版失败 —— 不允许发空版本。
+      - name: Collect release notes
+        env:
+          SINCE: ${{ needs.determine-version.outputs.since }}
+        run: bash ./scripts/release-notes.sh notes --since "$SINCE" > release_notes.md
+
+      # 已存在则更新，不报错：重跑失败的发版（同一 run 的 retry）不会撞车
+      - name: Create GitHub Release and tag
+        uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.determine-version.outputs.version }}
+          name: BiliBiliToolPro-V${{ needs.determine-version.outputs.version }}
+          body_path: release_notes.md
+          files: ./src/Ray.BiliBiliTool.Console/bin/Publish/*.zip
+          discussion_category_name: Announcements
+          make_latest: "true"
+          fail_on_unmatched_files: true
+
+  publish-images:
+    name: Publish stable Docker images
+    needs: [determine-version, publish-release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Login to DockerHub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: Login to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.repository_owner }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # 不需要 QEMU：编译阶段跑在 BUILDPLATFORM 上，final 层一条 RUN 都没有（ADR-0004）
+      - uses: docker/setup-buildx-action@v4
+
+      - uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          platforms: linux/amd64,linux/arm64
+          build-args: |
+            VERSION=${{ needs.determine-version.outputs.version }}
+          tags: |
+            ${{ env.DOCKER_IMG_NAME }}:${{ needs.determine-version.outputs.version }}
+            ${{ env.DOCKER_IMG_NAME }}:latest
+            ${{ env.GHCR_IMG_NAME }}:${{ needs.determine-version.outputs.version }}
+            ${{ env.GHCR_IMG_NAME }}:latest
+          cache-from: type=registry,ref=ghcr.io/raywangqvq/bili_tool_web:buildcache-stable
+          cache-to: type=registry,ref=ghcr.io/raywangqvq/bili_tool_web:buildcache-stable,mode=max,image-manifest=true
+
+  update-changelog:
+    name: Update changelog via PR
+    needs: [determine-version, publish-release]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # 推分支
+      pull-requests: write # 开 PR
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # 已验证的约束（4.0.8 发版实测）：
+      # - ruleset 要求 main 所有变更经 PR，GITHUB_TOKEN 直推必 403；
+      # - GITHUB_TOKEN 建的 PR 不触发 CI（防递归规则），dispatch 补跑的检查也
+      #   不会进入 PR 的状态汇总（GitHub 限制），required checks 永远缺失、
+      #   auto-merge 永不触发——所以本 job 只负责开到 PR，合并靠维护者一键
+      #   （纯文档变更，admin 可无视检查缺失）。想全自动需 fine-grained PAT
+      #   或自建 GitHub App 作 bypass（GitHub Actions app 不可作 bypass，API 422 实测）。
+      # 为什么不用 CI-skip 标记：提交信息里的 [skip ci] 字面量会让 squash 合并到
+      # main 的那次 push 整体跳过 alpha 构建（GitHub 按提交信息全文匹配）。
+      # update-changelog.sh 重跑安全：顶部已是同版本段落时替换而非重复插入，
+      # 内容无变化时本 job 直接成功退出（整个发版 run 的 retry 幂等）。
+      - name: Commit CHANGELOG section and open PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.determine-version.outputs.version }}
+          SINCE: ${{ needs.determine-version.outputs.since }}
+          BRANCH: chore/changelog-${{ needs.determine-version.outputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          bash ./scripts/update-changelog.sh "$VERSION" --since "$SINCE"
+          git add CHANGELOG.md
+          if git diff --cached --quiet; then
+            echo "CHANGELOG 顶部已是 $VERSION 段落且内容一致，无需回写"
+            exit 0
+          fi
+          git checkout -b "$BRANCH"
+          git commit -m "docs(changelog): $VERSION"
+          git push -f origin "$BRANCH"
+          pr_url=$(gh pr view "$BRANCH" --json url -q .url 2>/dev/null || true)
+          if [ -z "$pr_url" ]; then
+            pr_url=$(gh pr create --base main --head "$BRANCH" \
+              --title "docs(changelog): $VERSION" \
+              --body "Stable release $VERSION 的 CHANGELOG 回写，由 publish-stable-release.yml update-changelog job 自动生成。纯文档变更，required checks 不会因 bot PR 而运行，由维护者（admin）直接合并即可。")
+          fi
+          echo "CHANGELOG PR 已就绪，等待维护者合并：$pr_url"
+          echo "::notice title=CHANGELOG 回写::$pr_url 等待维护者合并（纯文档变更，可直接 --admin 合并）"

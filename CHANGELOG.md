@@ -1,3 +1,52 @@
+## 4.1.1
+- fix(web): publish Blazor framework scripts so the panel stays interactive (#1184)
+- fix(web): pin app version footer to the bottom of the sidebar drawer (#1183)
+- fix(web): prevent sidebar from covering content on narrow viewports (#1182)
+- docs(changelog): 4.1.0 (#1181)
+## 4.1.0
+- feat(web): 全站 MudBlazor 化、首页 UI 重做与暗色模式 (#1179)
+- feat(web): 今日任务页 UI 重做，并补上侧边栏缺失的图标 (#1178)
+- feat(web): 面板展示应用版本 (#1176)
+- fix: changelog job 不再尝试 auto-merge，改为开到 PR 等维护者合并（#1159） (#1175)
+- Bump Scrutor from 6.1.0 to 7.0.0 (#1169)
+- perf(ci): 镜像构建改为宿主机架构交叉编译，不再用 QEMU 模拟 arm64 (#1177)
+- docs(changelog): 4.0.8 (#1174)
+## 4.0.8
+- fix: changelog 回写改走 auto-merge PR 流，适配 main 的 ruleset 保护（#1159） (#1170)
+- 维护[#1153]: 发布策略重构——CI 托管版本号与单主干 alpha/stable 通道 (#1160)
+- refactor: 删除 platforms 的 dev 先行版变体脚本（#1159） (#1172)
+- chore(deps): bump docker/setup-qemu-action from 3 to 4 (#1165)
+- chore(deps): bump docker/setup-buildx-action from 3 to 4 (#1164)
+- chore(deps): bump actions/checkout from 2 to 7 (#1162)
+- docs: version-next.sh 头注登记 CI-skip 标记导致 alpha 断号的坑 (#1171)
+- chore(deps): bump actions/setup-dotnet from 4 to 6 (#1161)
+## 4.0.7
+- Fix[#1144]: Web 面板启动失败改为以非 0 退出码结束（此前恒为 0），Docker / 青龙等编排层不再把「启动崩溃」当成「正常退出」；退出码由运行时决定、不保证跨平台一致（Linux 134，Windows `0xE0434352`）
+- Fix[#1147][#1149]: 补齐 #1138 迁移到 `platforms/` 后仍遗留的旧路径（两轮）：呆呆/白虎的 `copyshfile.sh` 钩子与白虎任务脚本定位仓库根少一级、青龙 `bili_task_tryFix.sh` 找不到 dotnet 安装脚本、docker/podman 构建脚本的上下文多退一级，另有 5 个平台 README 共 30 处 `../docs/` 断链
+## 4.0.6
+- **BREAKING[#1138]**: 部署平台目录统一迁移至 `platforms/` 下（`docker`、`podman`、`qinglong`、`baihu`、`daidai`、`helm`、`tencentScf`、`gitHubActions`、`krew`）；按 `raw.githubusercontent.com/.../main/<旧路径>` 直接拉取脚本或示例文件的存量部署会 404，请改用 `platforms/<平台>/...`
+- Fix[#1140]: 修复 Web 面板启动时因模型与迁移不一致（`PendingModelChangesWarning`）而直接退出的问题；首次启动会自动为 `QRTZ_TRIGGERS`/`QRTZ_FIRED_TRIGGERS` 补列并创建 `QRTZ_PAUSED_JOB_GRPS` 表
+- Fix[#1133]: 触发器进入 ERROR 状态时面板立刻刷新，补齐 Quartz 4 的 `OnTriggerInError`/`OnTriggersInError` 回调，不再要等下一轮轮询才发现
+- 维护[#1133]: 升级到 Quartz.NET 4.1.1；作业存储的 System.Text.Json 实现 4.x 已并入 `Quartz` 核心，故删去独立的 `Quartz.Serialization.SystemTextJson` 引用
+- 维护[#1125][#1131]: 依赖批量升级，含 MudBlazor 8.6.0→9.10.0、AppAny.Quartz.EntityFrameworkCore.Migrations.SQLite 0.6.0→0.6.1、Serilog、QRCoder、CronExpressionDescriptor、Ray.Infrastructure、bunit、xunit 等
+- 维护[#1139][#1142]: 统一仓库文本文件换行符为 LF（`.bat`/`.cmd` 保留 CRLF），`.gitattributes` 只留兜底与例外声明，`.editorconfig` 去掉与 CSharpier 互相拉扯的 `insert_final_newline = false`；预览镜像触发路径收窄为仅工作流或配置文件变更
+## 4.0.5
+- Feature[#1106]: Web 新增「今日任务」页面：逐账号列出每个任务今天该不该做、做了没有，并提供单项/整账号/全部补做
+- Feature[#1106]: 漏做的任务可自动补做，间隔与记录保留天数由 `AutoRecoverConfig` 配置（默认每 2 小时检查一次，文档见 `docs/configuration.md`）
+- Feature[#1106]: Web 界面汉化（导航、首页、账号页、计划任务、日志/历史对话框、登录、修改密码、错误页）
+- Fix[#1106]: 账号页与今日任务页首屏不再同步请求 B 站，改为本地数据先渲染、B 站状态随后并发补齐，并加 60 秒缓存与单账号超时
+- Fix[#1106]: 账号页 Cookie 只显示截断值，不再把完整 Cookie 写进页面 DOM
+- Fix[#1106]: WBI 签名判定误用 `w_rid`（该字段为空时被 Refit 从查询串丢弃，导致签名从未生效），改用必然存在的 `wts` 判定
+- Fix[#1106]: 今日任务的到点计算改为按传入时刻的时区求值，不再依赖宿主机时区（原先在 UTC 机器上判为「本日无需执行」）
+- 重构 GitHub Actions
+- 新增 Dependabot（github-actions + nuget，目标分支 develop）
+## 4.0.2
+- 升级到dotnet10
+- Fix[#1104]: WebApiClientCore 迁移到 Refit 后，参数首字母变为大写导致调用失败，现统一还原，并补充回归测试
+- Feature: 响应解析失败时输出可定位的诊断日志，Cookie 等凭据一律掩码，避免进入日志与推送
+- Feature[#1087]：适配呆呆面板（Daidai Panel）
+- Fix: Bili Account 页面的增/改/删/排序写配置时，修正之前误用的环境变量式键名（`BiliBiliCookies__N`）
+- Fix: Bili Account 页面的保存不再静默失败，成功/失败均给出 Snackbar 提示
 ## 4.0.1
 - 新增Bili账号管理页面
 - 重构Web

@@ -1,0 +1,26 @@
+name: Close Stale Issues
+on:
+  schedule:
+    - cron: "0 8 * * *" # 每天的 00:00 运行
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  mark-and-close-stale-issues:
+    name: Mark and close stale issues
+    runs-on: ubuntu-latest
+    steps:
+      - name: Close Stale Issues
+        uses: actions/stale@v11
+        with:
+          days-before-stale: 3 # 3 天不活跃后标记Stale
+          days-before-close: 3 # 标记Stale后3天不活跃则关闭问题
+          stale-issue-label: "Stale" # 标记为 "Stale" 的问题
+          stale-issue-message: "🕸️ This has been inactive for 3 days, please confirm if it still needs attention~~" # Comment added
+          close-issue-message: "🚫 This has been inactive for too long and is now closed, feel free to reopen it if needed!" # Comment added
+          only-labels: "needs-more-info" # 只处理标签为 "help wanted" 的问题
+          repo-token: ${{ secrets.GITHUB_TOKEN }}

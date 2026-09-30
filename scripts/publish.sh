@@ -11,10 +11,10 @@ echo ' |____/|_|_|_| |_|\___/ \___/|_| '
 echo ''
 
 # ------------vars-----------
-repoDir=$(dirname $PWD)
+repoDir=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 consoleDir=$repoDir/src/Ray.BiliBiliTool.Console
 publishDir=$consoleDir/bin/Publish
-version=""
+version="${RELEASE_VERSION:-}"
 runTime=""
 # --------------------------
 
@@ -45,23 +45,25 @@ read_var_from_user() {
 }
 
 get_version() {
-    version=$(grep -oP '(?<=<Version>).*?(?=<\/Version>)' $repoDir/common.props)
+    # CI 通过 RELEASE_VERSION 显式传入；本地兜底见下方 if 块。
+    # 用 bash 显式调用：.sh 提交为 mode 100644，直接执行在 Linux 上是 Permission denied
+    if [ -z "$version" ]; then
+        # 本地直接运行恒为 0.0.0-dev，与 common.props 兜底一致（ADR-0002）：
+        # zip 文件名和程序集版本不会再出现"文件名是稳定号、程序集是 dev"的错配。
+        version="0.0.0-dev"
+    fi
     echo -e "current version: $version \n\n"
 
     mkdir -p $publishDir
-
-    # 将版本号保存到文件
-    echo "$version" > "$publishDir/version.txt"
-
-    echo "Version saved to $publishDir/version.txt"
 }
 
 extract_release_notes() {
-    echo "Extracting release notes from CHANGELOG.md..."
+    echo "Generating release notes from PR titles..."
     mkdir -p $publishDir
 
-    # 提取最新的 changelog (从第一个 ## 标题到下一个 ## 标题之间的所有内容)
-    sed -n '/^## /{p;:a;n;/^## /q;p;ba}' "$repoDir/CHANGELOG.md" > "$publishDir/release_notes.md"
+    # 本地可能没有可归纳的 PR 标题（如无 tag），失败不阻断本地打包
+    bash "$repoDir/scripts/release-notes.sh" notes > "$publishDir/release_notes.md" \
+        || echo "(no release notes)" > "$publishDir/release_notes.md"
 
     echo "Release notes saved to $publishDir/release_notes.md"
 }
@@ -78,6 +80,7 @@ publish_dotnet_dependent() {
     echo "dotnet publish..."
     dotnet publish --configuration Release \
         --self-contained false \
+        -p:Version="$version" \
         -p:PublishSingleFile=true \
         -p:DebugType=None \
         -p:DebugSymbols=false \
@@ -104,6 +107,7 @@ publish_self_contained() {
     dotnet publish --configuration Release \
         --self-contained true \
         --runtime $runtime \
+        -p:Version="$version" \
         -p:PublishSingleFile=true \
         -p:DebugType=None \
         -p:DebugSymbols=false \
@@ -119,7 +123,7 @@ publish_self_contained() {
 publish_tencentScf() {
     echo "---------start publishing 【tencent scf】 release---------"
     cd $publishDir
-    cp -r $repoDir/tencentScf/bootstrap $repoDir/tencentScf/index.sh ./linux-x64/
+    cp -r $repoDir/platforms/tencentScf/bootstrap $repoDir/platforms/tencentScf/index.sh ./linux-x64/
     cd ./linux-x64
     chmod 755 index.sh bootstrap
     zip -r ../bilibili-tool-pro-v$version-tencent-scf.zip ./*

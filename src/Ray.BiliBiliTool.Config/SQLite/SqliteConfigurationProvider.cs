@@ -15,8 +15,7 @@ public class SqliteConfigurationProvider(SqliteConfigurationSource source) : Con
     {
         Data = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
 
-        using var connection = new SqliteConnection(_connectionString);
-        connection.Open();
+        using var connection = CreateOpenConnection();
 
         EnsureTableExists(connection);
 
@@ -47,8 +46,7 @@ public class SqliteConfigurationProvider(SqliteConfigurationSource source) : Con
 
     public override void Set(string key, string? value)
     {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.Open();
+        using var connection = CreateOpenConnection();
 
         using var command = connection.CreateCommand();
         command.CommandText =
@@ -62,10 +60,12 @@ public class SqliteConfigurationProvider(SqliteConfigurationSource source) : Con
         Data[key] = value;
     }
 
-    public void BatchSet(Dictionary<string, string> configValues)
+    public void BatchSet(
+        Dictionary<string, string> configValues,
+        IReadOnlyCollection<string>? keysToDelete = null
+    )
     {
-        using var connection = new SqliteConnection(_connectionString);
-        connection.Open();
+        using var connection = CreateOpenConnection();
 
         using var transaction = connection.BeginTransaction();
         using var command = connection.CreateCommand();
@@ -87,12 +87,40 @@ public class SqliteConfigurationProvider(SqliteConfigurationSource source) : Con
                 Data[kvp.Key] = kvp.Value;
             }
 
+            if (keysToDelete is not null)
+            {
+                command.CommandText = $"DELETE FROM [{_tableName}] WHERE [{_keyColumnName}] = @key";
+                foreach (var key in keysToDelete)
+                {
+                    command.Parameters.Clear();
+                    command.Parameters.AddWithValue("@key", key);
+                    command.ExecuteNonQuery();
+                }
+            }
+
             transaction.Commit();
+            if (keysToDelete is not null)
+                foreach (var key in keysToDelete)
+                    Data.Remove(key);
         }
         catch
         {
             transaction.Rollback();
             throw;
         }
+    }
+
+    private SqliteConnection CreateOpenConnection()
+    {
+        var connectionStringBuilder = new SqliteConnectionStringBuilder(_connectionString);
+        string? databaseDirectory = Path.GetDirectoryName(connectionStringBuilder.DataSource);
+        if (!string.IsNullOrWhiteSpace(databaseDirectory))
+        {
+            Directory.CreateDirectory(databaseDirectory);
+        }
+
+        var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+        return connection;
     }
 }

@@ -16,6 +16,7 @@ using Ray.BiliBiliTool.Infrastructure.Cookie;
 
 namespace Ray.BiliBiliTool.CharacterizationTests;
 
+[Collection("Characterization")]
 public class DailyTaskCharacterizationTests
 {
     [Fact]
@@ -269,6 +270,16 @@ public class DailyTaskCharacterizationTests
         {
             throw new NotSupportedException();
         }
+
+        public Task<VideoInfoDto> GetRandomVideoForWatchAndShare(BiliCookie ck)
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<bool> OpenVideo(VideoInfoDto videoInfo, BiliCookie ck)
+        {
+            throw new NotSupportedException();
+        }
     }
 
     private sealed class ArticleDomainServiceDouble(List<string> callLog) : IArticleDomainService
@@ -364,6 +375,14 @@ public class DailyTaskCharacterizationTests
         }
 
         public Task<bool> SaveCookieToBaihuAsync(
+            BiliCookie ckInfo,
+            CancellationToken cancellationToken
+        )
+        {
+            throw new NotSupportedException();
+        }
+
+        public Task<bool> SaveCookieToDaiDaiAsync(
             BiliCookie ckInfo,
             CancellationToken cancellationToken
         )
